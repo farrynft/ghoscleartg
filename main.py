@@ -172,7 +172,7 @@ async def check_and_kick_inactive():
     logger.info("🔍 İNAKTİF KULLANICI KONTROLÜ BAŞLADI")
     logger.info("="*70)
     
-    client = TelegramClient('/app/data/session', API_ID, API_HASH)
+    client = TelegramClient('session', API_ID, API_HASH)
     
     try:
         await client.start(phone=PHONE)
