@@ -173,12 +173,37 @@ async def check_and_kick_inactive():
     logger.info("="*70)
     
     client = TelegramClient('session', API_ID, API_HASH)
-    
     try:
         await client.start(phone=PHONE)
         logger.info("✅ Telegram'a bağlanıldı")
         
-        channel = await client.get_entity(CHANNEL_USERNAME)
+        # Forum kanallar için özel handling
+        try:
+            # Önce normal deneme
+            if str(CHANNEL_USERNAME).startswith('@'):
+                channel = await client.get_entity(CHANNEL_USERNAME)
+            else:
+                # ID ise int'e çevir
+                channel_id = int(str(CHANNEL_USERNAME).replace('-100', ''))
+                channel = await client.get_entity(f'-100{channel_id}')
+        except Exception as e:
+            logger.warning(f"get_entity başarısız: {e}, dialogs'dan aranıyor...")
+            # Alternatif: Dialoglardan bul
+            channel = None
+            async for dialog in client.iter_dialogs():
+                if dialog.is_channel:
+                    # ID karşılaştır (hem -100 prefix'li hem prefix'siz)
+                    dialog_id_str = str(dialog.id).replace('-100', '')
+                    channel_id_str = str(CHANNEL_USERNAME).replace('-100', '').replace('-', '')
+                    
+                    if dialog_id_str == channel_id_str:
+                        channel = dialog.entity
+                        logger.info(f"✅ Kanal bulundu (dialogs): {dialog.title}")
+                        break
+            
+            if not channel:
+                raise Exception(f"Kanal bulunamadı: {CHANNEL_USERNAME}")
+        
         cutoff_date = datetime.now() - timedelta(days=INACTIVE_DAYS)
         
         logger.info(f"📢 Kanal: {channel.title}")
