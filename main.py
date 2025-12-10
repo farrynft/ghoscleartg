@@ -1,6 +1,6 @@
 from telethon import TelegramClient
 from telethon.tl.functions.channels import GetForumTopicsRequest
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 import asyncio
 import json
@@ -126,9 +126,14 @@ async def scan_all_messages_comprehensive(client, channel, cutoff_date):
                             topic_id = message.reply_to.reply_to_msg_id
                             topic_name = f"Topic #{topic_id}"
                     
+                    # Timezone-aware datetime kullan
+                    msg_date = message.date
+                    if msg_date.tzinfo is None:
+                        msg_date = msg_date.replace(tzinfo=timezone.utc)
+                    
                     if user_id not in active_users:
                         active_users[user_id] = {
-                            'last_message': message.date,
+                            'last_message': msg_date,
                             'topics': set(),
                             'message_count': 0
                         }
@@ -136,8 +141,8 @@ async def scan_all_messages_comprehensive(client, channel, cutoff_date):
                     active_users[user_id]['topics'].add(topic_name)
                     active_users[user_id]['message_count'] += 1
                     
-                    if message.date > active_users[user_id]['last_message']:
-                        active_users[user_id]['last_message'] = message.date
+                    if msg_date > active_users[user_id]['last_message']:
+                        active_users[user_id]['last_message'] = msg_date
                     
                     if topic_name not in topic_stats:
                         topic_stats[topic_name] = {'users': set(), 'messages': 0}
@@ -173,6 +178,7 @@ async def check_and_kick_inactive():
     logger.info("="*70)
     
     client = TelegramClient('session', API_ID, API_HASH)
+    
     try:
         await client.start(phone=PHONE)
         logger.info("✅ Telegram'a bağlanıldı")
@@ -204,7 +210,8 @@ async def check_and_kick_inactive():
             if not channel:
                 raise Exception(f"Kanal bulunamadı: {CHANNEL_USERNAME}")
         
-        cutoff_date = datetime.now() - timedelta(days=INACTIVE_DAYS)
+        # Timezone-aware cutoff date
+        cutoff_date = datetime.now(timezone.utc) - timedelta(days=INACTIVE_DAYS)
         
         logger.info(f"📢 Kanal: {channel.title}")
         logger.info(f"⏰ İnaktiflik süresi: {INACTIVE_DAYS} gün")
@@ -286,14 +293,17 @@ async def check_and_kick_inactive():
                         topics_str = "Bilinmiyor"
                         msg_count = 0
                     
+                    # Timezone-aware datetime parse
                     last_active = datetime.fromisoformat(last_message_str)
+                    if last_active.tzinfo is None:
+                        last_active = last_active.replace(tzinfo=timezone.utc)
                     
                     if last_active < cutoff_date:
                         is_inactive = True
-                        days_ago = (datetime.now() - last_active).days
+                        days_ago = (datetime.now(timezone.utc) - last_active).days
                         reason = f"{days_ago} gün önce son mesaj"
                     else:
-                        days_ago = (datetime.now() - last_active).days
+                        days_ago = (datetime.now(timezone.utc) - last_active).days
                         kept_active.append({
                             'name': member.first_name or 'İsimsiz',
                             'username': member.username,
@@ -304,7 +314,7 @@ async def check_and_kick_inactive():
                         
                 except Exception as e:
                     is_inactive = True
-                    reason = f"Geçersiz tarih: {e}"
+                    reason = f"Tarih hatası: {e}"
             
             if is_inactive:
                 try:
