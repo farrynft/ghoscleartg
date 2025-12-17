@@ -768,7 +768,10 @@ async def start_command_listener():
 
 def start_scheduler():
     """Otomatik scheduler başlat"""
-    scheduler = AsyncIOScheduler(timezone=TIMEZONE)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    
+    scheduler = AsyncIOScheduler(timezone=TIMEZONE, event_loop=loop)
     
     scheduler.add_job(
         check_and_kick_inactive, 
@@ -791,16 +794,17 @@ def start_scheduler():
     
     if os.getenv('RUN_ON_START', 'false').lower() == 'true':
         logger.info("🚀 İlk kontrol hemen başlatılıyor...")
-        asyncio.get_event_loop().run_until_complete(check_and_kick_inactive())
+        loop.run_until_complete(check_and_kick_inactive())
     
     scheduler.start()
     
-    # Komut listener'ı başlat (ayrı task olarak)
+    # Komut listener'ı başlat (eğer admin varsa)
     if ADMIN_USER_IDS:
-        asyncio.create_task(start_command_listener())
+        logger.info("🤖 Komut dinleyici başlatılıyor...")
+        loop.create_task(start_command_listener())
     
     try:
-        asyncio.get_event_loop().run_forever()
+        loop.run_forever()
     except (KeyboardInterrupt, SystemExit):
         logger.info("\n⏹️ Program durduruldu")
 
