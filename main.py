@@ -26,12 +26,15 @@ CHECK_HOUR = int(os.getenv('CHECK_HOUR', '0'))
 CHECK_MINUTE = int(os.getenv('CHECK_MINUTE', '0'))
 TIMEZONE = os.getenv('TIMEZONE', 'Europe/Istanbul')
 
+# Bot Token (uyarı mesajları için)
+BOT_TOKEN = os.getenv('BOT_TOKEN', '')
+
 # Uyarı sistemi ayarları
 WARNING_ENABLED = os.getenv('WARNING_ENABLED', 'true').lower() == 'true'
 WARNING_DAYS_BEFORE = int(os.getenv('WARNING_DAYS_BEFORE', '2'))
 WARNING_MESSAGE = os.getenv('WARNING_MESSAGE', 
-    '⚠️ Dikkat! Son {days} gündür mesaj atmadınız. '
-    '{remaining} gün içinde mesaj atmazsanız gruptan çıkarılacaksınız!')
+    '⚠️ Warning! You have not sent a message in the last {days} days. '
+    'If you do not send a message within {remaining} days, you will be removed from the group!')
 
 # Rapor sistemi
 REPORT_ENABLED = os.getenv('REPORT_ENABLED', 'true').lower() == 'true'
@@ -293,31 +296,61 @@ async def handle_command(client, event, channel):
         logger.error(f"❌ Komut hatası: {e}")
 
 async def send_warning_to_user(client, channel, user, days_inactive, days_remaining):
-    """Kullanıcıya uyarı mesajı gönder"""
+    """Kullanıcıya uyarı mesajı gönder - Bot üzerinden"""
     try:
         warning_text = WARNING_MESSAGE.format(
             days=days_inactive,
             remaining=days_remaining
         )
         
-        try:
-            # Önce DM dene
-            await client.send_message(user.id, warning_text)
-            logger.info(f"📨 DM gönderildi: {user.first_name} (@{user.username or 'no_username'})")
-            return True
-        except Exception as dm_error:
-            # DM gönderilemezse kanalda mention et
-            logger.warning(f"⚠️ DM gönderilemedi, kanalda mention edilecek: {dm_error}")
-            
+        # Bot client kullan (eğer BOT_TOKEN varsa)
+        if BOT_TOKEN:
+            bot_client = TelegramClient('bot_session', API_ID, API_HASH)
             try:
-                # Kanalda mention et
-                mention_text = f"👤 [{user.first_name}](tg://user?id={user.id})\n{warning_text}"
-                await client.send_message(channel, mention_text)
-                logger.info(f"📢 Kanalda mention edildi: {user.first_name}")
+                await bot_client.start(bot_token=BOT_TOKEN)
+                logger.info(f"🤖 Bot client bağlandı")
+                
+                try:
+                    # Bot üzerinden DM dene
+                    await bot_client.send_message(user.id, warning_text)
+                    logger.info(f"📨 Bot DM gönderildi: {user.first_name} (@{user.username or 'no_username'})")
+                    return True
+                except Exception as dm_error:
+                    # DM gönderilemezse kanalda mention et (bot üzerinden)
+                    logger.warning(f"⚠️ Bot DM gönderilemedi, kanalda mention edilecek: {dm_error}")
+                    
+                    try:
+                        # Kanalda mention et (bot üzerinden)
+                        mention_text = f"👤 [{user.first_name}](tg://user?id={user.id})\n{warning_text}"
+                        await bot_client.send_message(channel, mention_text)
+                        logger.info(f"📢 Bot kanalda mention etti: {user.first_name}")
+                        return True
+                    except Exception as mention_error:
+                        logger.error(f"❌ Bot mention başarısız: {mention_error}")
+                        return False
+            finally:
+                await bot_client.disconnect()
+        else:
+            # BOT_TOKEN yoksa eski yöntem (user client)
+            logger.warning("⚠️ BOT_TOKEN tanımlı değil, user client kullanılıyor")
+            try:
+                # Önce DM dene
+                await client.send_message(user.id, warning_text)
+                logger.info(f"📨 DM gönderildi: {user.first_name} (@{user.username or 'no_username'})")
                 return True
-            except Exception as mention_error:
-                logger.error(f"❌ Mention başarısız: {mention_error}")
-                return False
+            except Exception as dm_error:
+                # DM gönderilemezse kanalda mention et
+                logger.warning(f"⚠️ DM gönderilemedi, kanalda mention edilecek: {dm_error}")
+                
+                try:
+                    # Kanalda mention et
+                    mention_text = f"👤 [{user.first_name}](tg://user?id={user.id})\n{warning_text}"
+                    await client.send_message(channel, mention_text)
+                    logger.info(f"📢 Kanalda mention edildi: {user.first_name}")
+                    return True
+                except Exception as mention_error:
+                    logger.error(f"❌ Mention başarısız: {mention_error}")
+                    return False
                 
     except Exception as e:
         logger.error(f"❌ Uyarı gönderme hatası: {e}")
